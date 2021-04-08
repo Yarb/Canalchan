@@ -1,0 +1,26 @@
+{
+  "buttons": 8, 
+  "commands": {
+    "u": 0,
+    "d": 1,
+    "l": 2,
+    "r": 3,
+    "a": 4,
+    "b": 5,
+    "x": 6,
+    "y": 7,
+    "uu": 0,
+    "dd": 1,
+    "ll": 2,
+    "rr": 3,
+    "aa": 4,
+    "bb": 4,
+    "xx": 4,
+    "yy": 4
+  },
+  "tmi_token" : "",
+  "client_id" : "",
+  "bot_nick" : "canalchan",
+  "bot_prefix" : "-",
+  "channel" : "#canalchan"
+}
