@@ -15,10 +15,13 @@ class CanalBot(commands.Bot):
                          nick=config["bot_nick"], 
                          prefix=config["bot_prefix"],
                          initial_channels=[config["channel"]])
+                         
         self.channel = config["channel"]
         self.botname = config["bot_nick"]
         self.buttons = config["buttons"]
         self.commands = config["commands"]
+        self.prefix = config["bot_prefix"]
+        
         self.joy = tc.tController(self.buttons, self.commands)
 
 
@@ -31,11 +34,13 @@ class CanalBot(commands.Bot):
         if ctx.author.name.lower() == self.botname.lower():
             return
 
-        parts = ctx.content.split("!")
-        if len(parts) == 2:
-            if parts[1] in self.commands:
-                self.joy.press(parts[1])
-            
+        if self.prefix != "":
+            parts = ctx.content.split(self.prefix)
+            if len(parts) == 2:
+                if parts[1] in self.commands:
+                    self.joy.press(parts[1])
+        elif ctx.content in self.commands:
+            self.joy.press(ctx.content)
 
 if __name__ == "__main__":
   canalbot = CanalBot("config.json")
