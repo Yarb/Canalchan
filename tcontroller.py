@@ -2,12 +2,11 @@ import pyvjoy
 import threading
 import time
 
-HOLDTIME = 0.02
 
 class tController():
 
 
-    def __init__(self, buttons : int, cmds: dict):
+    def __init__(self, buttons : int, cmds: dict, holdtime, holdtime_long):
         if isinstance(buttons, int):
             self.buttons = ["0" for i in range(buttons)]
         else:
@@ -19,6 +18,9 @@ class tController():
 
         self.timers = list(range(buttons))
         self.joy1 = pyvjoy.VJoyDevice(1)
+        self.holdtime = holdtime
+        self.holdtime_long = holdtime_long
+        
         self.lock = threading.Lock()
 
 
@@ -50,8 +52,11 @@ class tController():
             self.update_joystick(idx, 1)
             
             if len(cmd) == 1:
-                self.timers[idx] = threading.Timer(HOLDTIME, self.release, args=(cmd,))
-                self.timers[idx].start()
+                holdtime = self.holdtime
+            else:
+                holdtime = self.holdtime_long
+            self.timers[idx] = threading.Timer(holdtime, self.release, args=(cmd,))
+            self.timers[idx].start()
 
 
     def release(self, cmd):
@@ -62,3 +67,7 @@ class tController():
             raise KeyError("Given command not listed.")
 
 
+    def reset(self):
+        "tController:  Doing controller reset...."
+        for command in self.cmds.keys():
+            self.release(command)
