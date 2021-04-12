@@ -44,8 +44,9 @@ class CanalBot(commands.Bot):
         self.mode = ANARCHY
         self.voters = dict()
         
-        # File to update
+        # Files to update
         self.info_file = config["info_file"]
+        self.vote_info_file = config["vote_info_file"]
         
         #Locks
         self.votes_lock = threading.Lock()
@@ -140,6 +141,9 @@ class CanalBot(commands.Bot):
                 self.vote_timer_t = threading.Timer(self.vote_time, self.process_votes, args=())
                 self.vote_timer_t.start()
                 print("Voting started")
+                with open(self.vote_info_file, 'w+') as outfile:
+                    outfile.write(f"\nNow voting next command..." )
+                    outfile.flush()
     
         
     def process_votes(self):
@@ -148,10 +152,15 @@ class CanalBot(commands.Bot):
         Resets the voting after done.
         """
         
+        if not self.mode == DEMOCRACY:
+            return
+            
         print("Voting concluded")
         self.votes_lock.acquire()
         winner = max(self.votes, key = self.votes.get)
-        print(winner)
+        with open(self.vote_info_file, 'w+') as outfile:
+            outfile.write(f"Executed command: {winner}\nNow voting next command..." )
+            outfile.flush()
         if self.votes[winner] > 0:
             self.execute(str(winner))
         self.reset_votes()
@@ -245,9 +254,9 @@ class CanalBot(commands.Bot):
         """Return current mode in string"""
         
         if self.mode == DEMOCRACY:
-            return "democracy"
+            return "Democracy"
         elif self.mode == ANARCHY:
-            return "anarchy"
+            return "Anarchy"
         
     
     def count_voters(self):
@@ -271,7 +280,7 @@ class CanalBot(commands.Bot):
         anarchists = str(a)
         democrats = str(d)
         
-        status1 = f"Currently in {self.get_mode()}."
+        status1 = f"Mode: {self.get_mode()}."
         status2 = f"Democrats : {democrats} - {anarchists} : Anarchists"
         change = ""
         if self.mode_change == ANARCHY:
