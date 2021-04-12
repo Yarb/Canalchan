@@ -14,9 +14,9 @@
     "ll": 2,
     "rr": 3,
     "aa": 4,
-    "bb": 4,
-    "xx": 4,
-    "yy": 4
+    "bb": 5,
+    "xx": 6,
+    "yy": 7
   },
   "mode_commands" : {
     "anarchy": 0,
@@ -27,10 +27,12 @@
   "holdtime" : 0.170,
   "holdtime_long" : 2,
   
-  "tmi_token" : ,
+  "tmi_token" : "",
   "client_id" : "",
   "bot_nick" : "canalchan",
   "bot_prefix" : "",
   "channel" : "#canalchan",
   
-  "info_file" : "info.txt"
+  "info_file" : "info.txt",
+  "vote_info_file" : "vote_info.txt"
+}
