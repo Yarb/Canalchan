@@ -3,6 +3,7 @@ import json
 import threading
 import time
 import tcontroller as tc
+import filewriter as fw
 from twitchio.ext import commands
 
 NO_CHANGE = -1
@@ -30,6 +31,9 @@ class CanalBot(commands.Bot):
         self.commands = config["commands"]
         self.mode_commands = config["mode_commands"]
         
+        # Command UTF formatting for logging use
+        self.cmd_utf = config["cmd_utf"]
+        
         
         # Voting variables
         self.votes = config["commands"]
@@ -44,9 +48,14 @@ class CanalBot(commands.Bot):
         self.mode = ANARCHY
         self.voters = dict()
         
-        # Files to update
-        self.info_file = config["info_file"]
-        self.vote_info_file = config["vote_info_file"]
+        # Filewriters
+        self.fw_info = fw.filewriter(config["info_file"], "w")
+        self.fw_vinfo = fw.filewriter(config["vote_info_file"], "w")
+        self.fw_log = fw.filewriter(config["log_file"], "a")
+        
+        self.fw_info.start()
+        self.fw_vinfo.start()
+        self.fw_log.start()
         
         #Locks
         self.votes_lock = threading.Lock()
@@ -122,6 +131,8 @@ class CanalBot(commands.Bot):
                 self.vote(content)
             else:
                 self.execute(content)
+                utf = self.get_cmd_utf(content)
+                self.fw_log.queue(f"{utf}\n")
         elif content in self.mode_commands:
             self.mode_vote(ctx.author.name.lower(), content)
         self.update_info()
@@ -137,13 +148,15 @@ class CanalBot(commands.Bot):
             self.votes_lock.acquire()
             self.votes[command] += 1
             self.votes_lock.release()
+            
+            utf = self.get_cmd_utf(command)
+            self.fw_log.queue(f"{utf} (Vote)\n")
+            
             if not self.vote_timer_t.is_alive():
                 self.vote_timer_t = threading.Timer(self.vote_time, self.process_votes, args=())
                 self.vote_timer_t.start()
                 print("Voting started")
-                with open(self.vote_info_file, 'w+') as outfile:
-                    outfile.write(f"\nNow voting next command..." )
-                    outfile.flush()
+                self.fw_vinfo.queue(f"\nNow voting next command...")
     
         
     def process_votes(self):
@@ -158,11 +171,11 @@ class CanalBot(commands.Bot):
         print("Voting concluded")
         self.votes_lock.acquire()
         winner = max(self.votes, key = self.votes.get)
-        with open(self.vote_info_file, 'w+') as outfile:
-            outfile.write(f"Executed command: {winner}\nNow voting next command..." )
-            outfile.flush()
         if self.votes[winner] > 0:
             self.execute(str(winner))
+            utf = self.get_cmd_utf(winner)
+            self.fw_log.queue(f"{utf} (Executed)\n")
+            self.fw_vinfo.queue(f"Voting finished, winning vote: {utf}\n")
         self.reset_votes()
         self.votes_lock.release()
     
@@ -242,6 +255,7 @@ class CanalBot(commands.Bot):
         
         if self.mode_change == mode:         
             self.mode = mode
+            self.fw_log.queue("Mode change\n-----------\n")
             self.mode_change = NO_CHANGE
         else:
             if self.mode == mode:
@@ -288,11 +302,15 @@ class CanalBot(commands.Bot):
         elif self.mode_change == DEMOCRACY:
             change += "Moving to democracy!"
         
-        with open(self.info_file, 'w+') as info_file:
-            info_file.write(status1 + "\n" + status2 + "\n" + change)
-            info_file.flush()
+        self.fw_info.queue(status1 + "\n" + status2 + "\n" + change)
 
 
+    def get_cmd_utf(self, command):
+        if command in self.cmd_utf:
+            return self.cmd_utf[command]
+        else:
+            return command
+        
 
 if __name__ == "__main__":
   canalbot = CanalBot("config.json")
