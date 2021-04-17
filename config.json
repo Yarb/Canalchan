@@ -18,6 +18,16 @@
     "xx": 6,
     "yy": 7
   },
+  "cmd_utf" : {
+    "u": "\u2b06",
+    "d": "\u2b07",
+    "l": "\u2b05",
+    "r": "\u27a1",
+    "a": "\ud83c\udd30", 
+    "b": "\ud83c\udd31",
+    "x": "\ud83c\udd47",
+    "y": "\ud83c\udd48"
+  },
   "mode_commands" : {
     "anarchy": 0,
     "democracy": 1
@@ -34,5 +44,6 @@
   "channel" : "#canalchan",
   
   "info_file" : "info.txt",
-  "vote_info_file" : "vote_info.txt"
+  "vote_info_file" : "vote_info.txt",
+  "log_file" : "log.txt"
 }
