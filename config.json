@@ -26,7 +26,15 @@
     "a": "\ud83c\udd30", 
     "b": "\ud83c\udd31",
     "x": "\ud83c\udd47",
-    "y": "\ud83c\udd48"
+    "y": "\ud83c\udd48",
+    "uu": "\u2b06\u27f3",
+    "dd": "\u2b07\u27f3",
+    "ll": "\u2b05\u27f3",
+    "rr": "\u27a1\u27f3",
+    "aa": "\ud83c\udd30\u27f3", 
+    "bb": "\ud83c\udd31\u27f3",
+    "xx": "\ud83c\udd47\u27f3",
+    "yy": "\ud83c\udd48\u27f3"
   },
   "mode_commands" : {
     "anarchy": 0,
