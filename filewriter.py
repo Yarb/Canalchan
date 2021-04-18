@@ -32,9 +32,7 @@ class filewriter(threading.Thread):
                     self.condition.wait()
                 if type != "a":
                     if self.data:
-                        self.file.seek(0)
                         self.file.write(self.data.pop())
-                        self.file.truncate()
                         self.data = []
                 else:                
                     while self.data:
@@ -42,6 +40,13 @@ class filewriter(threading.Thread):
             self.file.flush()
         self.file.close()
 
+
+    def clear(self):
+        with self.condition:
+            self.file.seek(0)
+            self.file.truncate()
+            self.data = []
+        
     
     def queue(self, data):
         if not self.close:
@@ -57,19 +62,3 @@ class filewriter(threading.Thread):
         with self.condition:
             self.condition.notify()
     
-    
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
