@@ -47,6 +47,7 @@ class CanalBot(commands.Bot):
         self.mode_change = NO_CHANGE
         self.mode = ANARCHY
         self.voters = dict()
+        self.cmdvoters = []
         
         # Filewriters
         self.fw_info = fw.filewriter(config["info_file"], "w")
@@ -70,6 +71,7 @@ class CanalBot(commands.Bot):
         self.joy.reset()
         self.reset_votes()
         self.update_info()
+        self.fw_vinfo.queue("Anarchy active, anything goes")
 
 
 
@@ -128,7 +130,7 @@ class CanalBot(commands.Bot):
 
         if content in self.commands:
             if self.mode == DEMOCRACY:
-                self.vote(content)
+                self.vote(content, ctx.author.name.lower())
             else:
                 self.execute(content)
                 utf = self.get_cmd_utf(content)
@@ -138,7 +140,7 @@ class CanalBot(commands.Bot):
         self.update_info()
     
     
-    def vote(self, command):
+    def vote(self, command, user):
         """Vote for given command.
         Function verifies the command and adds a registers the vote.
         Additionally, timer thread to process the votes is started if it was not running already.
@@ -146,7 +148,9 @@ class CanalBot(commands.Bot):
         
         if command in self.votes:
             self.votes_lock.acquire()
-            self.votes[command] += 1
+            if not user in self.cmdvoters:
+                self.votes[command] += 1
+                self.cmdvoters.append(user)
             self.votes_lock.release()
             
             utf = self.get_cmd_utf(command)
@@ -156,7 +160,9 @@ class CanalBot(commands.Bot):
                 self.vote_timer_t = threading.Timer(self.vote_time, self.process_votes, args=())
                 self.vote_timer_t.start()
                 print("Voting started")
-                self.fw_vinfo.queue(f"\nNow voting next command...")
+                self.fw_vinfo.clear()
+                self.fw_vinfo.queue(f"Democracy rules supreme\n")
+                self.fw_vinfo.queue(f"Now voting next command...\n")
     
         
     def process_votes(self):
@@ -170,12 +176,15 @@ class CanalBot(commands.Bot):
             
         print("Voting concluded")
         self.votes_lock.acquire()
+        self.cmdvoters = []
         winner = max(self.votes, key = self.votes.get)
         if self.votes[winner] > 0:
             self.execute(str(winner))
             utf = self.get_cmd_utf(winner)
             self.fw_log.queue(f"{utf} (Executed)\n")
-            self.fw_vinfo.queue(f"Voting finished, winning vote: {utf}\n")
+            self.fw_vinfo.clear()
+            self.fw_vinfo.queue(f"Democracy rules supreme\n")
+            self.fw_vinfo.queue(f"Voting finished, winner: {utf}\n")
         self.reset_votes()
         self.votes_lock.release()
     
@@ -244,7 +253,7 @@ class CanalBot(commands.Bot):
 
         self.thread_lock.acquire()
         if self.mode_change != NO_CHANGE:
-            print("creating new timed thread for mode checking...")
+            print("Creating new timed thread for mode checking...")
             self.mode_timer_t = threading.Timer(self.mode_time, self.mode_check, args=())
             self.mode_timer_t.start()
         self.thread_lock.release()
@@ -255,13 +264,18 @@ class CanalBot(commands.Bot):
         
         if self.mode_change == mode:         
             self.mode = mode
-            self.fw_log.queue("Mode change\n-----------\n")
+            self.fw_log.queue("Mode change\n")
+            if self.mode == ANARCHY:
+                self.fw_vinfo.queue("Anarchy active, anything goes")
+            elif self.mode == DEMOCRACY:
+                self.fw_vinfo.queue("Democracy rules supreme")
             self.mode_change = NO_CHANGE
         else:
             if self.mode == mode:
                 self.mode_change = NO_CHANGE
             else:
                 self.mode_change = mode
+        
             
     
     def get_mode(self):
@@ -302,6 +316,7 @@ class CanalBot(commands.Bot):
         elif self.mode_change == DEMOCRACY:
             change += "Moving to democracy!"
         
+        self.fw_info.clear()
         self.fw_info.queue(status1 + "\n" + status2 + "\n" + change)
 
 
