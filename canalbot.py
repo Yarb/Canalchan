@@ -2,6 +2,7 @@ import os
 import json
 import threading
 import time
+import random
 import tcontroller as tc
 import filewriter as fw
 from twitchio.ext import commands
@@ -9,7 +10,8 @@ from twitchio.ext import commands
 NO_CHANGE = -1
 ANARCHY = 0
 DEMOCRACY = 1
-NO_VOTE = 2
+COMMUNISM = 2
+NO_VOTE = 3
 
 class CanalBot(commands.Bot):
 
@@ -30,6 +32,7 @@ class CanalBot(commands.Bot):
         self.prefix = config["bot_prefix"]
         self.commands = config["commands"]
         self.mode_commands = config["mode_commands"]
+        self.plan_size = config["plan_size"]
         
         # Command UTF formatting for logging use
         self.cmd_utf = config["cmd_utf"]
@@ -39,7 +42,7 @@ class CanalBot(commands.Bot):
         self.votes = config["commands"]
         self.vote_time = config["vote_time"]
         self.mode_time = config["mode_time"]
-        self.vote_timer_t = threading.Timer(self.vote_time, self.process_votes, args=())
+        self.vote_timer_t = threading.Timer(self.vote_time, self.process_command_votes, args=())
         self.mode_timer_t = threading.Timer(self.mode_time, self.mode_check, args=())
         
         # Democracy/Anarchy mode variables
@@ -53,6 +56,10 @@ class CanalBot(commands.Bot):
         self.fw_info = fw.filewriter(config["info_file"], "w")
         self.fw_vinfo = fw.filewriter(config["vote_info_file"], "w")
         self.fw_log = fw.filewriter(config["log_file"], "a")
+        
+        self.fw_info.daemon = True
+        self.fw_vinfo.daemon = True
+        self.fw_log.daemon = True
         
         self.fw_info.start()
         self.fw_vinfo.start()
@@ -68,8 +75,11 @@ class CanalBot(commands.Bot):
                                   self.commands.copy(), 
                                   config["holdtime"], 
                                   config["holdtime_long"])
+        self.joy.daemon = True
+        self.joy.start()
         self.joy.reset()
-        self.reset_votes()
+        
+        self.init_democratic_vote()
         self.update_info()
         self.fw_vinfo.queue("Anarchy active, anything goes")
 
@@ -119,7 +129,7 @@ class CanalBot(commands.Bot):
         if ctx.author.name.lower() == self.botname.lower():
             return
 
-        content = ctx.content.lower()
+        content = ctx.content.replace(" ","").lower()
 
         if self.prefix != "":
             parts = content.split(self.prefix)
@@ -128,17 +138,37 @@ class CanalBot(commands.Bot):
             else:
                 return
 
-        if content in self.commands:
+        if content in self.mode_commands:
+            self.mode_vote(ctx.author.name.lower(), content)
+            self.update_info()
+            return
+            
+        if self.mode == COMMUNISM:
+            content = content.split(",")
+
+        if self.check_content(content):
             if self.mode == DEMOCRACY:
                 self.vote(content, ctx.author.name.lower())
+            elif self.mode == COMMUNISM:
+                self.communist_vote(content, ctx.author.name.lower())
             else:
                 self.execute(content)
                 utf = self.get_cmd_utf(content)
                 self.fw_log.queue(f"{utf}\n")
-        elif content in self.mode_commands:
-            self.mode_vote(ctx.author.name.lower(), content)
-        self.update_info()
     
+    
+    def check_content(self, content):
+        if self.mode != COMMUNISM:
+            if content not in self.commands:
+                return False
+            return True
+        else:
+            for i in content:
+                if i not in self.commands:
+                    return False
+            return True
+                  
+
     
     def vote(self, command, user):
         """Vote for given command.
@@ -146,18 +176,18 @@ class CanalBot(commands.Bot):
         Additionally, timer thread to process the votes is started if it was not running already.
         """
         
+        if user in self.cmdvoters:
+            return
         if command in self.votes:
-            self.votes_lock.acquire()
-            if not user in self.cmdvoters:
+            with self.votes_lock:
                 self.votes[command] += 1
-                self.cmdvoters.append(user)
-            self.votes_lock.release()
+                self.cmdvoters.append(user)                
             
             utf = self.get_cmd_utf(command)
             self.fw_log.queue(f"{utf} (Vote)\n")
             
             if not self.vote_timer_t.is_alive():
-                self.vote_timer_t = threading.Timer(self.vote_time, self.process_votes, args=())
+                self.vote_timer_t = threading.Timer(self.vote_time, self.process_command_votes, args=())
                 self.vote_timer_t.start()
                 print("Voting started")
                 self.fw_vinfo.clear()
@@ -165,7 +195,7 @@ class CanalBot(commands.Bot):
                 self.fw_vinfo.queue(f"Now voting next command...\n")
     
         
-    def process_votes(self):
+    def process_command_votes(self):
         """Process all the buttonpress votes.
         Will determine which command got most votes and execute it.
         Resets the voting after done.
@@ -175,34 +205,119 @@ class CanalBot(commands.Bot):
             return
             
         print("Voting concluded")
-        self.votes_lock.acquire()
-        self.cmdvoters = []
-        winner = max(self.votes, key = self.votes.get)
-        if self.votes[winner] > 0:
-            self.execute(str(winner))
-            utf = self.get_cmd_utf(winner)
-            self.fw_log.queue(f"{utf} (Executed)\n")
-            self.fw_vinfo.clear()
-            self.fw_vinfo.queue(f"Democracy rules supreme\n")
-            self.fw_vinfo.queue(f"Voting finished, winner: {utf}\n")
-        self.reset_votes()
-        self.votes_lock.release()
+        with self.votes_lock:
+            self.cmdvoters = []
+            winner = max(self.votes, key = self.votes.get)
+            print(f"Winner: {winner}, {self.votes[winner]}")
+            if self.votes[winner] > 0:
+                self.execute(str(winner))
+                utf = self.get_cmd_utf(winner)
+                self.fw_log.queue(f"{utf} (Executed)\n")
+                self.fw_vinfo.clear()
+                self.fw_vinfo.queue(f"Democracy rules supreme\n")
+                self.fw_vinfo.queue(f"Voting finished, winner: {utf}\n")
+        self.init_democratic_vote()
     
+
+    def communist_vote(self, plan, user):
+    
+        if user in self.cmdvoters:
+            return
+        if len(plan) == len(self.votes):
+            utf = ""
+            with self.votes_lock:
+                for i,vote in enumerate(plan):
+                    print(f"Inserting {i}, {vote}")
+                    self.votes[i][vote] += 1
+                    if i != 0:
+                        utf += ","
+                    utf += self.get_cmd_utf(vote)
+                self.cmdvoters.append(user)
+                
+            self.fw_log.queue(f"{utf} (Voted plan)\n")
+            
+            if not self.vote_timer_t.is_alive():
+                self.vote_timer_t = threading.Timer(self.vote_time, self.process_plan_votes, args=())
+                self.vote_timer_t.start()
+                print("Plan voting started")
+                self.fw_vinfo.clear()
+                self.fw_vinfo.queue(f"Communist Comrades' Command Plan active\n")
+                self.fw_vinfo.queue(f"Vote for next {self.plan_size} commands comrade\n")
+                
+
+    def process_plan_votes(self):
+        result = []
+        if not self.mode == COMMUNISM:
+            return
+        utf = ""
+        with self.votes_lock:    
+            for i,v in enumerate(self.votes):
+                result.append(self.dict_rng_max(self.votes[i]))
+            print(f"Result: {result}")
+            self.init_communist_vote()
+            self.execute(result)
+            
+            self.cmdvoters = []
+            for i,v in enumerate(result):
+                if i != 0:
+                    utf += ","
+                utf += self.get_cmd_utf(v)
+         
+        self.fw_log.queue(f"{utf} (Winning plan)\n")
+        self.fw_vinfo.clear()
+        self.fw_vinfo.queue(f"Communist Comrades' Command Plan active\n")
+        self.fw_vinfo.queue(f"Combined winning plan: {utf}\n")
+
     
     def execute(self, command):
         """Executes given command"""
         
-        print(f"Executing: {command}")
-        self.joy.press(command)
+        if isinstance(command, str) :
+            print(f"Executing: {command}")
+            self.joy.queue_command(command)
+        elif isinstance(command, list):
+            print(f"Executing communist plan: {command}")
+            self.joy.queue_sequence(command)
     
     
-    def reset_votes(self):
-        """Resets the votes for buttonpresses.
+    def init_democratic_vote(self):
+        """Sets the votes for democratic mode.
         Ensure that you have acquired the votes_lock as this is not done here!
         """
-        
+    
+        self.votes = dict.fromkeys(self.commands)
         for k in self.votes:
             self.votes[k] = 0
+    
+    
+    def init_communist_vote(self):
+        """Sets the votes for communist mode.
+        Ensure that you have acquired the votes_lock as this is not done here!
+        """
+
+        self.votes = []
+        for i in range(self.plan_size):
+            self.votes.append(dict.fromkeys(self.commands,0))
+        
+    
+    def dict_rng_max(self, dct):
+        """Modified max value from dictionary. 
+        If multiple keys have same value, pick one at random"""
+        
+        if len(dct) == 0:
+            return
+        loop = True
+        bestvalue = 0
+        contenders = []
+        bestvalue = dct[max(dct, key = dct.get)]
+        while(loop and len(dct) > 0):
+            contender = max(dct, key = dct.get)
+            if dct[contender] == bestvalue:
+                contenders.append(contender) 
+                dct.pop(contender)
+            else:
+                loop = False
+        return contenders[random.randint(0,len(contenders) - 1)]
     
     
     def mode_vote(self, user, vote):
@@ -217,8 +332,8 @@ class CanalBot(commands.Bot):
         value = self.mode_commands[vote]
                 
         self.voters_lock.acquire()
-        # Mode must be 0 or 1 (anarchy/democracy)
-        if value == ANARCHY or value == DEMOCRACY:
+        # Mode must be 0,1,2 (anarchy/democracy/communism)
+        if value == ANARCHY or value == DEMOCRACY or value == COMMUNISM:
             self.voters[user] = value
             
         self.thread_lock.acquire()
@@ -237,17 +352,15 @@ class CanalBot(commands.Bot):
         """
             
         self.voters_lock.acquire()
-        anarchists, democrats = self.count_voters()
+        result, winner = self.count_voters()
         
-        print("Anarchists:" + str(anarchists))
-        print("Democrats:" + str(democrats))
+        print("Anarchists:" + str(result[ANARCHY]))
+        print("Democrats:" + str(result[DEMOCRACY]))
+        print("Communists:" + str(result[COMMUNISM]))
         
-        # Check which side is winning. Ties keep system as is
-        if anarchists < democrats:
-            self.set_mode(DEMOCRACY)
-        elif anarchists > democrats:
-            self.set_mode(ANARCHY)
-            
+        if result[winner] != result[self.mode]:
+            self.set_mode(winner)
+                
         self.update_info()
         self.voters_lock.release()
 
@@ -265,11 +378,24 @@ class CanalBot(commands.Bot):
         if self.mode_change == mode:         
             self.mode = mode
             self.fw_log.queue("Mode change\n")
+            self.fw_vinfo.clear()
+
             if self.mode == ANARCHY:
                 self.fw_vinfo.queue("Anarchy active, anything goes")
             elif self.mode == DEMOCRACY:
                 self.fw_vinfo.queue("Democracy rules supreme")
+            elif self.mode == COMMUNISM:
+                self.fw_vinfo.queue("Welcome to communism, comrade")
+                self.fw_vinfo.queue(f"Communist Comrades' Command Plan active\n")
             self.mode_change = NO_CHANGE
+
+            if mode != COMMUNISM:
+                self.joy.set_normal_mode()
+                self.init_democratic_vote()
+            else:
+                self.joy.set_sequential_mode()
+                self.init_communist_vote()
+
         else:
             if self.mode == mode:
                 self.mode_change = NO_CHANGE
@@ -285,36 +411,49 @@ class CanalBot(commands.Bot):
             return "Democracy"
         elif self.mode == ANARCHY:
             return "Anarchy"
+        elif self.mode == COMMUNISM:
+            return "Communism"
         
     
     def count_voters(self):
         """Helper function to calculate numbers of anarchist/democrat voters"""
         
-        anarchists = 0
-        democrats = 0
+        result = [0,0,0]
+        winner = 0
         for i in self.voters.values():
             if i == ANARCHY:
-                anarchists += 1
+                result[ANARCHY] += 1
             elif i == DEMOCRACY:
-                democrats += 1
-        return anarchists, democrats
+                result[DEMOCRACY] += 1
+            elif i == COMMUNISM:
+                result[COMMUNISM] += 1
+                
+        if result[COMMUNISM] > result[winner]:
+            winner = COMMUNISM
+        if result[DEMOCRACY] > result[winner]:
+            winner = DEMOCRACY
+               
+        return result, winner
         
         
     def update_info(self):
         """Update the mode status to configured file.
         """
         
-        a,d = self.count_voters()
-        anarchists = str(a)
-        democrats = str(d)
+        result, winner = self.count_voters()
+        anarchists = str(result[ANARCHY])
+        democrats = str(result[DEMOCRACY])
+        communists = str(result[COMMUNISM])
         
         status1 = f"Mode: {self.get_mode()}."
-        status2 = f"Democrats : {democrats} - {anarchists} : Anarchists"
+        status2 = f"Democrats : {democrats} -  Anarchists : {anarchists} - Communists : {communists}"
         change = ""
         if self.mode_change == ANARCHY:
             change += "Moving to anarchy!"
         elif self.mode_change == DEMOCRACY:
             change += "Moving to democracy!"
+        elif self.mode_change == COMMUNISM:
+            change += "Moving to communism!"
         
         self.fw_info.clear()
         self.fw_info.queue(status1 + "\n" + status2 + "\n" + change)
