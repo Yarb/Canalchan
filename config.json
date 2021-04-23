@@ -38,12 +38,15 @@
   },
   "mode_commands" : {
     "anarchy": 0,
-    "democracy": 1
+    "democracy": 1,
+    "communism": 2
+    
   },
-  "vote_time" : 3,
-  "mode_time": 5,
+  "vote_time" : 15,
+  "mode_time": 15,
   "holdtime" : 0.170,
-  "holdtime_long" : 2,
+  "holdtime_long" : 1,
+  "plan_size" : 5,
   
   "tmi_token" : "",
   "client_id" : "",
