@@ -6,6 +6,8 @@ import random
 import tcontroller as tc
 import filewriter as fw
 from twitchio.ext import commands
+import asyncio
+import concurrent.futures
 
 NO_CHANGE = -1
 ANARCHY = 0
@@ -33,17 +35,17 @@ class CanalBot(commands.Bot):
         self.commands = config["commands"]
         self.mode_commands = config["mode_commands"]
         self.plan_size = config["plan_size"]
+        self.msg_queue = []
         
         # Command UTF formatting for logging use
         self.cmd_utf = config["cmd_utf"]
-        
         
         # Voting variables
         self.votes = config["commands"]
         self.vote_time = config["vote_time"]
         self.mode_time = config["mode_time"]
-        self.vote_timer_t = threading.Timer(self.vote_time, self.process_command_votes, args=())
-        self.mode_timer_t = threading.Timer(self.mode_time, self.mode_check, args=())
+        self.vote_timer = False
+        self.mode_timer = False
         
         # Democracy/Anarchy mode variables
         self.voterounds = 0
@@ -84,11 +86,10 @@ class CanalBot(commands.Bot):
         self.fw_vinfo.queue("Anarchy active, anything goes")
 
 
-
     async def event_ready(self):
         """Bot ready event - Simply prints message to show that bot activated"""
         
-        print(f"{self.botname} is online!")
+        print(f"{self.botname} is online!")        
 
 
     async def event_join(self, user):
@@ -139,18 +140,19 @@ class CanalBot(commands.Bot):
                 return
 
         if content in self.mode_commands:
-            self.mode_vote(ctx.author.name.lower(), content)
-            self.update_info()
+            await self.mode_vote(ctx.author.name.lower(), content)
             return
             
         if self.mode == COMMUNISM:
             content = content.split(",")
 
         if self.check_content(content):
+            print(f"Something valid : {content}")
+            print(f"Mode : {self.mode}")
             if self.mode == DEMOCRACY:
-                self.vote(content, ctx.author.name.lower())
+                await self.vote(content, ctx.author.name.lower(), ctx.channel)
             elif self.mode == COMMUNISM:
-                self.communist_vote(content, ctx.author.name.lower())
+                await self.communist_vote(content, ctx.author.name.lower(), ctx.channel)
             else:
                 self.execute(content)
                 utf = self.get_cmd_utf(content)
@@ -170,7 +172,7 @@ class CanalBot(commands.Bot):
                   
 
     
-    def vote(self, command, user):
+    async def vote(self, command, user, channel):
         """Vote for given command.
         Function verifies the command and adds a registers the vote.
         Additionally, timer thread to process the votes is started if it was not running already.
@@ -186,32 +188,42 @@ class CanalBot(commands.Bot):
             utf = self.get_cmd_utf(command)
             self.fw_log.queue(f"{utf} (Vote)\n")
             
-            if not self.vote_timer_t.is_alive():
-                self.vote_timer_t = threading.Timer(self.vote_time, self.process_command_votes, args=())
-                self.vote_timer_t.start()
+            if not self.vote_timer:
+                self.vote_timer = True
+                await channel.send(f"Voting started. Vote time {self.vote_time[0] + self.vote_time[1]} seconds")
                 print("Voting started")
                 self.fw_vinfo.clear()
                 self.fw_vinfo.queue(f"Democracy rules supreme\n")
                 self.fw_vinfo.queue(f"Now voting next command...\n")
+                await asyncio.sleep(self.vote_time[0])
+                await self.process_command_votes(channel)
     
         
-    def process_command_votes(self):
+    async def process_command_votes(self, channel):
         """Process all the buttonpress votes.
         Will determine which command got most votes and execute it.
         Resets the voting after done.
         """
         
-        if not self.mode == DEMOCRACY:
-            return
-            
-        print("Voting concluded")
+        await channel.send(f"Voting ends in {self.vote_time[1]} seconds")
+        await asyncio.sleep(self.vote_time[1])
+        
         with self.votes_lock:
+            self.vote_timer = False
+            if not self.mode == DEMOCRACY:
+                print("cancelled")
+                await channel.send(f"Mode changed, vote cancelled")
+                self.cmdvoters = []
+                return
+            
+            print("Voting concluded")
             self.cmdvoters = []
             winner = max(self.votes, key = self.votes.get)
             print(f"Winner: {winner}, {self.votes[winner]}")
             if self.votes[winner] > 0:
                 self.execute(str(winner))
                 utf = self.get_cmd_utf(winner)
+                await channel.send(f"Voting finished. Most votes for: {utf}")
                 self.fw_log.queue(f"{utf} (Executed)\n")
                 self.fw_vinfo.clear()
                 self.fw_vinfo.queue(f"Democracy rules supreme\n")
@@ -219,7 +231,7 @@ class CanalBot(commands.Bot):
         self.init_democratic_vote()
     
 
-    def communist_vote(self, plan, user):
+    async def communist_vote(self, plan, user, channel):
     
         if user in self.cmdvoters:
             return
@@ -227,30 +239,37 @@ class CanalBot(commands.Bot):
             utf = ""
             with self.votes_lock:
                 for i,vote in enumerate(plan):
-                    print(f"Inserting {i}, {vote}")
                     self.votes[i][vote] += 1
-                    if i != 0:
-                        utf += ","
+                    #if i != 0:
+                    #    utf += ","
                     utf += self.get_cmd_utf(vote)
                 self.cmdvoters.append(user)
                 
             self.fw_log.queue(f"{utf} (Voted plan)\n")
-            
-            if not self.vote_timer_t.is_alive():
-                self.vote_timer_t = threading.Timer(self.vote_time, self.process_plan_votes, args=())
-                self.vote_timer_t.start()
-                print("Plan voting started")
+            if not self.vote_timer:
+                self.vote_timer = True
+                await channel.send(f"Voting for next 5 command plan started. Vote time {self.vote_time[0] + self.vote_time[1]} seconds")
                 self.fw_vinfo.clear()
                 self.fw_vinfo.queue(f"Communist Comrades' Command Plan active\n")
                 self.fw_vinfo.queue(f"Vote for next {self.plan_size} commands comrade\n")
+                await asyncio.sleep(self.vote_time[0])
+                await self.process_plan_votes(channel)
                 
 
-    def process_plan_votes(self):
+    async def process_plan_votes(self, channel):
+        """Process all given communist plan votes and calculate results"""
+        
+        await channel.send(f"Plan voting ends in {self.vote_time[1]} seconds")
+        await asyncio.sleep(self.vote_time[1])
+        
         result = []
-        if not self.mode == COMMUNISM:
-            return
         utf = ""
-        with self.votes_lock:    
+
+        with self.votes_lock:
+            self.vote_timer = False
+            if not self.mode == COMMUNISM:
+                self.cmdvoters = []
+                return
             for i,v in enumerate(self.votes):
                 result.append(self.dict_rng_max(self.votes[i]))
             print(f"Result: {result}")
@@ -259,9 +278,10 @@ class CanalBot(commands.Bot):
             
             self.cmdvoters = []
             for i,v in enumerate(result):
-                if i != 0:
-                    utf += ","
+                #if i != 0:
+                #    utf += ","
                 utf += self.get_cmd_utf(v)
+            await channel.send(f"Comrades, new 5 command plan decided: {utf}")
          
         self.fw_log.queue(f"{utf} (Winning plan)\n")
         self.fw_vinfo.clear()
@@ -320,7 +340,7 @@ class CanalBot(commands.Bot):
         return contenders[random.randint(0,len(contenders) - 1)]
     
     
-    def mode_vote(self, user, vote):
+    async def mode_vote(self, user, vote):
         """Process the user vote for modechange
         Marks the given vote to specific user.
         Launches the mode checking timer if not already running
@@ -331,22 +351,19 @@ class CanalBot(commands.Bot):
 
         value = self.mode_commands[vote]
                 
-        self.voters_lock.acquire()
-        # Mode must be 0,1,2 (anarchy/democracy/communism)
-        if value == ANARCHY or value == DEMOCRACY or value == COMMUNISM:
-            self.voters[user] = value
-            
-        self.thread_lock.acquire()
-        if not self.mode_timer_t.is_alive():
-            self.mode_timer_t = threading.Timer(self.mode_time, self.mode_check, args=())
-            self.mode_timer_t.start()
-            print("Mode change check started")
+        with self.voters_lock:
+            # Mode must be 0,1,2 (anarchy/democracy/communism)
+            if value == ANARCHY or value == DEMOCRACY or value == COMMUNISM:
+                self.voters[user] = value
+                
         self.update_info()
-        self.thread_lock.release()
-        self.voters_lock.release()
-
+        if not self.mode_timer:
+            print("Mode change check started")
+            self.mode_timer = True
+            await asyncio.sleep(self.mode_time)
+            await self.mode_check()
         
-    def mode_check(self):
+    async def mode_check(self):
         """Do recount on the users' mode votes and see if a change is necessary.
         
         """
@@ -360,16 +377,18 @@ class CanalBot(commands.Bot):
         
         if result[winner] != result[self.mode]:
             self.set_mode(winner)
+            self.mode_timer = False
                 
         self.update_info()
         self.voters_lock.release()
 
-        self.thread_lock.acquire()
         if self.mode_change != NO_CHANGE:
-            print("Creating new timed thread for mode checking...")
-            self.mode_timer_t = threading.Timer(self.mode_time, self.mode_check, args=())
-            self.mode_timer_t.start()
-        self.thread_lock.release()
+            self.mode_timer = True
+            print("Mode rechecking timer running...")
+            await asyncio.sleep(self.mode_time)
+            await self.mode_check()
+        else:
+            self.mode_timer = False
         
             
     def set_mode(self, mode):
