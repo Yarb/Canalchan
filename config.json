@@ -19,14 +19,14 @@
     "yy": 7
   },
   "cmd_utf" : {
-    "u": "\u2b06",
-    "d": "\u2b07",
-    "l": "\u2b05",
-    "r": "\u27a1",
-    "a": "\ud83c\udd30", 
-    "b": "\ud83c\udd31",
-    "x": "\ud83c\udd47",
-    "y": "\ud83c\udd48",
+    "u ": "\u2b06",
+    "d ": "\u2b07",
+    "l ": "\u2b05",
+    "r ": "\u27a1",
+    "a ": "\ud83c\udd30", 
+    "b ": "\ud83c\udd31",
+    "x ": "\ud83c\udd47",
+    "y ": "\ud83c\udd48",
     "uu": "\u2b06\u27f3",
     "dd": "\u2b07\u27f3",
     "ll": "\u2b05\u27f3",
@@ -42,7 +42,7 @@
     "communism": 2
     
   },
-  "vote_time" : 15,
+  "vote_time" : [8,8]
   "mode_time": 15,
   "holdtime" : 0.170,
   "holdtime_long" : 1,
